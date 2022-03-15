@@ -22,7 +22,9 @@
 namespace OCA\Richdocuments\Controller;
 
 use OC\Files\View;
+use OCA\FilesLock\Service\LockService;
 use OCA\Richdocuments\AppConfig;
+use OCA\Richdocuments\AppInfo\Application;
 use OCA\Richdocuments\Db\Wopi;
 use OCA\Richdocuments\Db\WopiMapper;
 use OCA\Richdocuments\Helper;
@@ -181,6 +183,7 @@ class WopiController extends Controller {
 				'EnableShare' => $file->isShareable() && !$isVersion,
 				'DownloadAsPostMessage' => $wopi->getDirect(),
 				'HideUserList' => '',
+				'SupportsLocks' => true,
 			],
 			// TODO: Once PHP is >= 8.1 we can use array unpacking with string-keyed arrays
 			$this->templateManager->getWopiParams($wopi),
@@ -422,8 +425,12 @@ class WopiController extends Controller {
 			$content = fopen('php://input', 'rb');
 
 			try {
-				$this->retryOperation(function () use ($file, $content){
-					return $file->putContent($content);
+				/** @var LockService $lockService */
+				$lockService = \OC::$server->get(LockService::class);
+				$lockService->executeInAppScope(Application::APPNAME, function() use ($file, $content) {
+					$this->retryOperation(function () use ($file, $content) {
+						return $file->putContent($content);
+					});
 				});
 			} catch (LockedException $e) {
 				$this->logger->logException($e);
@@ -467,10 +474,28 @@ class WopiController extends Controller {
 	 * @return JSONResponse
 	 * @throws DoesNotExistException
 	 */
-	public function putRelativeFile($fileId,
-					$access_token) {
+	public function filePost(string $fileId, string $access_token): JSONResponse {
+		$wopiOverride = $this->request->getHeader('X-WOPI-Override');
+		$wopiLock = $this->request->getHeader('X-WOPI-Lock');
 		list($fileId, ,) = Helper::parseFileId($fileId);
 		$wopi = $this->wopiMapper->getWopiForToken($access_token);
+
+		switch ($wopiOverride) {
+			case 'LOCK':
+				return $this->lock($wopi, $wopiLock);
+			case 'UNLOCK':
+				return $this->unlock($wopi, $wopiLock);
+			case 'REFRESH_LOCK':
+				return $this->refreshLock($wopi, $wopiLock);
+			case 'GET_LOCK':
+				return $this->getLock($wopi, $wopiLock);
+			case 'RENAME_FILE':
+				break; //FIXME: Move to function
+			default:
+				break; //FIXME: Move to function and add error for unsupported method
+		}
+
+
 		$isRenameFile = ($this->request->getHeader('X-WOPI-Override') === 'RENAME_FILE');
 
 		if (!$wopi->getCanwrite()) {
@@ -565,8 +590,12 @@ class WopiController extends Controller {
 			$this->userScopeService->setFilesystemScope($wopi->getEditorUid());
 
 			try {
-				$this->retryOperation(function () use ($file, $content){
-					return $file->putContent($content);
+				/** @var LockService $lockService */
+				$lockService = \OC::$server->get(LockService::class);
+				$lockService->executeInAppScope('richdocuments', function() use ($file, $content) {
+					$this->retryOperation(function () use ($file, $content) {
+						return $file->putContent($content);
+					});
 				});
 			} catch (LockedException $e) {
 				return new JSONResponse(['message' => 'File locked'], Http::STATUS_INTERNAL_SERVER_ERROR);
@@ -585,6 +614,27 @@ class WopiController extends Controller {
 			return new JSONResponse([], Http::STATUS_INTERNAL_SERVER_ERROR);
 		}
 	}
+
+	private function lock(Wopi $wopi, string $lock): JSONResponse {
+		/** @var LockService $lockService */
+		$lockService = \OC::$server->get(LockService::class);/** @var LockService $lockService */
+		$lockService = \OC::$server->get(LockService::class);
+		$lockService->lockFileAsApp($this->getFileForWopiToken($wopi), Application::APPNAME);
+		return new JSONResponse();
+	}
+	private function unlock(Wopi $wopi, string $lock): JSONResponse {
+		$lockService = \OC::$server->get(LockService::class);/** @var LockService $lockService */
+		$lockService = \OC::$server->get(LockService::class);
+		$lockService->unlockFile($this->getFileForWopiToken($wopi)->getId(), Application::APPNAME);
+		return new JSONResponse();
+	}
+	private function refreshLock(Wopi $wopi, string $lock): JSONResponse {
+		return new JSONResponse();
+	}
+	private function getLock(Wopi $wopi, string $lock): JSONResponse {
+		return new JSONResponse();
+	}
+
 
 	/**
 	 * Retry operation if a LockedException occurred

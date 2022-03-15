@@ -227,7 +227,7 @@ class DirectViewController extends Controller {
 					'directGuest' => empty($direct->getUid()),
 				];
 
-				list($urlSrc, $token, $wopi) = $this->tokenManager->getToken($node->getId(), $direct->getShare(), $direct->getUid(), true);
+				list($urlSrc, $token, $wopi) = $this->tokenManager->getToken($node->getId(), $direct->getShare(), null, true);
 				if (!empty($direct->getInitiatorHost())) {
 					$this->tokenManager->upgradeFromDirectInitiator($direct, $wopi);
 				}

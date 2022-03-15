@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace OCA\Richdocuments\Middleware;
 
 use OCA\Richdocuments\AppInfo\Application;
-use OCA\Richdocuments\Controller\WopiController;
+use OCA\Richdocuments\Controller\WopiControllerTest;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\AppFramework\Http\Response;
@@ -52,13 +52,13 @@ class WOPIMiddleware extends Middleware {
 	public function beforeController($controller, $methodName) {
 		parent::beforeController($controller, $methodName);
 
-		if ($controller instanceof WopiController && !$this->isWOPIAllowed()) {
+		if ($controller instanceof WopiControllerTest && !$this->isWOPIAllowed()) {
 			throw new NotPermittedException();
 		}
 	}
 
 	public function afterException($controller, $methodName, \Exception $exception): Response {
-		if ($exception instanceof NotPermittedException && $controller instanceof WopiController) {
+		if ($exception instanceof NotPermittedException && $controller instanceof WopiControllerTest) {
 			return new JSONResponse([], Http::STATUS_FORBIDDEN);
 		}
 
