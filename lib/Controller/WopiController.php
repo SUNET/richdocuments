@@ -22,6 +22,7 @@
 namespace OCA\Richdocuments\Controller;
 
 use OC\Files\View;
+use OCA\FilesLock\Service\AppLockService;
 use OCA\FilesLock\Service\LockService;
 use OCA\Richdocuments\AppConfig;
 use OCA\Richdocuments\AppInfo\Application;
@@ -57,6 +58,8 @@ use OCP\IUserManager;
 use OCP\Lock\LockedException;
 use OCP\Share\Exceptions\ShareNotFound;
 use OCP\Share\IManager as IShareManager;
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
 
 class WopiController extends Controller {
 	/** @var IRootFolder */
@@ -425,12 +428,8 @@ class WopiController extends Controller {
 			$content = fopen('php://input', 'rb');
 
 			try {
-				/** @var LockService $lockService */
-				$lockService = \OC::$server->get(LockService::class);
-				$lockService->executeInAppScope(Application::APPNAME, function() use ($file, $content) {
-					$this->retryOperation(function () use ($file, $content) {
-						return $file->putContent($content);
-					});
+				$this->wrappedFilesystemOperation(function () use ($file, $content){
+					return $file->putContent($content);
 				});
 			} catch (LockedException $e) {
 				$this->logger->logException($e);
@@ -590,12 +589,8 @@ class WopiController extends Controller {
 			$this->userScopeService->setFilesystemScope($wopi->getEditorUid());
 
 			try {
-				/** @var LockService $lockService */
-				$lockService = \OC::$server->get(LockService::class);
-				$lockService->executeInAppScope('richdocuments', function() use ($file, $content) {
-					$this->retryOperation(function () use ($file, $content) {
-						return $file->putContent($content);
-					});
+				$this->wrappedFilesystemOperation(function () use ($file, $content){
+					return $file->putContent($content);
 				});
 			} catch (LockedException $e) {
 				return new JSONResponse(['message' => 'File locked'], Http::STATUS_INTERNAL_SERVER_ERROR);
@@ -616,25 +611,31 @@ class WopiController extends Controller {
 	}
 
 	private function lock(Wopi $wopi, string $lock): JSONResponse {
-		/** @var LockService $lockService */
-		$lockService = \OC::$server->get(LockService::class);/** @var LockService $lockService */
-		$lockService = \OC::$server->get(LockService::class);
-		$lockService->lockFileAsApp($this->getFileForWopiToken($wopi), Application::APPNAME);
+		$this->filesLockNoop(function (AppLockService $appLockService) use ($wopi) {
+			$appLockService->lockFileAsApp($this->getFileForWopiToken($wopi), Application::APPNAME);
+		});
 		return new JSONResponse();
 	}
 	private function unlock(Wopi $wopi, string $lock): JSONResponse {
-		$lockService = \OC::$server->get(LockService::class);/** @var LockService $lockService */
-		$lockService = \OC::$server->get(LockService::class);
-		$lockService->unlockFile($this->getFileForWopiToken($wopi)->getId(), Application::APPNAME);
+		$this->filesLockNoop(function (AppLockService $appLockService) use ($wopi) {
+			$appLockService->unlockFileAsApp($this->getFileForWopiToken($wopi), Application::APPNAME);
+		});
 		return new JSONResponse();
 	}
+
 	private function refreshLock(Wopi $wopi, string $lock): JSONResponse {
 		return new JSONResponse();
 	}
+
 	private function getLock(Wopi $wopi, string $lock): JSONResponse {
 		return new JSONResponse();
 	}
 
+	protected function wrappedFilesystemOperation(callable $callback): void {
+		$this->wrapOperationRetry(function () use ($callback) {
+			$this->wrapOperationFilesLock($callback);
+		});
+	}
 
 	/**
 	 * Retry operation if a LockedException occurred
@@ -643,7 +644,7 @@ class WopiController extends Controller {
 	 * @throws LockedException
 	 * @throws GenericFileException
 	 */
-	private function retryOperation(callable $operation) {
+	private function wrapOperationRetry(callable $operation) {
 		for ($i = 0; $i < 5; $i++) {
 			try {
 				if ($operation() !== false) {
@@ -657,6 +658,26 @@ class WopiController extends Controller {
 			}
 		}
 		throw new GenericFileException('Operation failed after multiple retries');
+	}
+
+	private function wrapOperationFilesLock(callable $operation) {
+		$appManager = \OC::$server->getAppManager();
+		if (!$appManager->isEnabledForUser('files_lock')) {
+			$operation();
+		}
+		$this->filesLockNoop(function (AppLockService $appLockService) use ($operation) {
+			$appLockService->executeInAppScope(Application::APPNAME, $operation);
+		});
+	}
+
+	private function filesLockNoop(callable $operation) {
+		/** @var AppLockService $lockService */
+		try {
+			$lockService = \OC::$server->get(AppLockService::class);
+			$operation($lockService);
+		} catch (NotFoundExceptionInterface $e) {
+		} catch (ContainerExceptionInterface $e) {
+		}
 	}
 
 	/**
