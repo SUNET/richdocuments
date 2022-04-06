@@ -45,7 +45,7 @@ use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Files\Lock\ILock;
 use OCP\Files\Lock\ILockManager;
-use OCP\Files\Lock\LockScope;
+use OCP\Files\Lock\LockContext;
 use OCP\Files\Lock\NoLockProviderException;
 use OCP\Files\Lock\OwnerLockedException;
 use OCP\Files\Node;
@@ -618,7 +618,7 @@ class WopiController extends Controller {
 
 	private function lock(Wopi $wopi, string $lock): JSONResponse {
 		try {
-			$lock = $this->lockManager->lock(new LockScope(
+			$lock = $this->lockManager->lock(new LockContext(
 				$this->getFileForWopiToken($wopi),
 				ILock::TYPE_APP,
 				Application::APPNAME
@@ -634,7 +634,7 @@ class WopiController extends Controller {
 	}
 	private function unlock(Wopi $wopi, string $lock): JSONResponse {
 		try {
-			$lock = $this->lockManager->unlock(new LockScope(
+			$lock = $this->lockManager->unlock(new LockContext(
 				$this->getFileForWopiToken($wopi),
 				ILock::TYPE_APP,
 				Application::APPNAME
@@ -649,7 +649,7 @@ class WopiController extends Controller {
 
 	private function refreshLock(Wopi $wopi, string $lock): JSONResponse {
 		try {
-			$lock = $this->lockManager->lock(new LockScope(
+			$lock = $this->lockManager->lock(new LockContext(
 				$this->getFileForWopiToken($wopi),
 				ILock::TYPE_APP,
 				Application::APPNAME
@@ -676,7 +676,7 @@ class WopiController extends Controller {
 			});
 		};
 		try {
-			$this->lockManager->runInScope(new LockScope(
+			$this->lockManager->runInScope(new LockContext(
 				$this->getFileForWopiToken($wopi),
 				ILock::TYPE_APP,
 				Application::APPNAME
