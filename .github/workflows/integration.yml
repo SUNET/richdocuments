@@ -30,7 +30,7 @@ jobs:
         image: collabora/code
         env:
           extra_params: '--o:ssl.enable=false'
-          domain: nextcloud
+          aliasgroup1: nextcloud
         ports:
           - "9980:9980"
 
